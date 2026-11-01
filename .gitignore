@@ -1,0 +1,10 @@
+# ============================================================
+# Cloudflared - Gitignore
+# ============================================================
+
+# Omgevingsbestanden met tokens
+.env
+.env.*
+
+# Voorbeeldbestand wel opnemen
+!.env.example
