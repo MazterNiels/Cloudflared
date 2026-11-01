@@ -31,21 +31,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-# Tunnel 2
-  cloudflared-2:
-    container_name: ${CONTAINER_NAME_2:?Geef CONTAINER_NAME_1 op in het .env-bestand.}
-    image: cloudflare/cloudflared:latest
-    
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN_2:?Geef TUNNEL_TOKEN_1 op in het .env-bestand.}
-      TUNNEL_LOGLEVEL: info
-
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"

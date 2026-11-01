@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installeert de twee tunnels uit compose.yaml.
+# Interactieve installatie van één of meerdere Cloudflare-tunnels.
 set -euo pipefail
 
 fail() {
@@ -7,93 +7,256 @@ fail() {
   exit 1
 }
 
-# Werk vanuit de map van dit script, ongeacht waar het wordt gestart.
+printf '\n'
+printf '============================================================\n'
+printf ' Cloudflared — Installatie\n'
+printf ' Auteur: MazterNiels\n'
+printf ' GitHub: https://github.com/MazterNiels/Cloudflared\n'
+printf '============================================================\n'
+printf '\n'
+
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-[[ -f compose.yaml ]] || fail 'Plaats install.sh naast compose.yaml.'
-[[ -r /dev/tty && -w /dev/tty ]] || fail 'Start dit script in een interactieve terminal.'
-command -v docker >/dev/null 2>&1 || fail 'Installeer eerst Docker.'
-docker compose version >/dev/null 2>&1 || fail 'Installeer eerst Docker Compose.'
-docker info >/dev/null 2>&1 || fail 'Docker is niet bereikbaar. Start Docker en controleer je toegangsrechten.'
 
-printf '\nCloudflared installeren\n\n'
+command -v docker >/dev/null 2>&1 \
+  || fail 'Installeer eerst Docker.'
 
-ask_name() {
-  local label="$1" default="$2" value
-  while true; do
-    read -r -p "$label [$default]: " value </dev/tty || fail 'Invoer afgebroken.'
-    value="${value:-$default}"
-    if [[ "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
-      REPLY="$value"
-      return
-    fi
-    printf 'Gebruik letters, cijfers, punten, streepjes of underscores; begin met een letter of cijfer.\n'
-  done
-}
+docker compose version >/dev/null 2>&1 \
+  || fail 'Installeer eerst Docker Compose.'
 
-ask_token() {
-  local label="$1" value
-  while true; do
-    read -r -s -p "$label (invoer verborgen): " value </dev/tty || fail 'Invoer afgebroken.'
-    printf '\n' >/dev/tty
-    # Alleen tokenkarakters toestaan, zodat .env geen extra regels of expansies bevat.
-    if [[ "$value" =~ ^[a-zA-Z0-9_+/=-]+$ ]]; then
-      REPLY="$value"
-      return
-    fi
-    printf 'Plak een token zonder spaties of aanhalingstekens, niet de volledige Docker-opdracht.\n'
-  done
-}
+docker info >/dev/null 2>&1 \
+  || fail 'Docker is niet bereikbaar. Controleer Docker en je toegangsrechten.'
+
+[[ -r /dev/tty && -w /dev/tty ]] \
+  || fail 'Gebruik een interactieve Bash-terminal.'
+
+# Lees bestaande waarden zonder het bestand als shellcode uit te voeren.
+old_names=()
+old_tokens=()
+previous_count=0
 
 if [[ -e .env || -L .env ]]; then
-  [[ -f .env && ! -L .env ]] || fail '.env moet een normaal bestand zijn, geen symlink.'
-  printf 'Bestaand .env gevonden. Dit wordt gebruikt en niet overschreven.\n'
-else
-  printf 'Maak eerst twee tunnels aan in Cloudflare en houd de tokens bij de hand.\n\n'
-  ask_name 'Containernaam tunnel 1' 'cloudflared-1'
-  name_1="$REPLY"
-  while true; do
-    ask_name 'Containernaam tunnel 2' 'cloudflared-2'
-    name_2="$REPLY"
-    [[ "$name_1" != "$name_2" ]] && break
-    printf 'De twee containernamen moeten verschillen.\n'
-  done
-  ask_token 'Token tunnel 1'
-  token_1="$REPLY"
-  ask_token 'Token tunnel 2'
-  token_2="$REPLY"
+  [[ -f .env && ! -L .env ]] \
+    || fail '.env moet een normaal bestand zijn.'
 
-  # Maak een privébestand en publiceer het zonder een bestaand .env te overschrijven.
-  umask 077
-  temporary_env="$(mktemp .env.install.XXXXXX)"
-  trap 'rm -f -- "$temporary_env"' EXIT
-  {
-    printf '# Lokaal bestand met tokens. Niet delen of committen.\n'
-    printf 'CONTAINER_NAME_1=%s\n' "$name_1"
-    printf 'TUNNEL_TOKEN_1=%s\n\n' "$token_1"
-    printf 'CONTAINER_NAME_2=%s\n' "$name_2"
-    printf 'TUNNEL_TOKEN_2=%s\n' "$token_2"
-  } >"$temporary_env"
-  ln -- "$temporary_env" .env || fail '.env kon niet veilig worden aangemaakt.'
-  rm -f -- "$temporary_env"
-  trap - EXIT
-  unset token_1 token_2 REPLY
-  printf '\n.env aangemaakt; alleen de eigenaar kan het bestand lezen en schrijven.\n'
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+
+    if [[ "$line" =~ ^(CONTAINER_NAME|TUNNEL_TOKEN)_([1-9][0-9]?)=(.*)$ ]]; then
+      kind="${BASH_REMATCH[1]}"
+      index="${BASH_REMATCH[2]}"
+      value="${BASH_REMATCH[3]}"
+
+      # Ondersteun eenvoudige waarden tussen aanhalingstekens.
+      if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+
+      if [[ "$kind" == CONTAINER_NAME &&
+            "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+        old_names[index]="$value"
+      elif [[ "$kind" == TUNNEL_TOKEN &&
+              "$value" =~ ^[a-zA-Z0-9_+/=-]+$ ]]; then
+        old_tokens[index]="$value"
+      fi
+
+      if (( index > previous_count )); then
+        previous_count="$index"
+      fi
+    fi
+  done < .env
+
+  printf 'Bestaand .env gevonden. Geldige namen en tokens kun je hergebruiken.\n'
 fi
 
-# Gebruik expliciet deze configuratie en dit env-bestand.
-# --quiet voorkomt dat de ingevulde configuratie met tokens wordt afgedrukt.
-compose=(docker compose --env-file .env -f compose.yaml)
-"${compose[@]}" config --quiet
+printf '\nCloudflared installeren\n'
 
-printf '\nConfiguratie geldig. Containers ophalen en starten? [j/N]: '
-read -r answer </dev/tty || fail 'Invoer afgebroken.'
+default_count="$previous_count"
+if (( default_count == 0 )); then
+  default_count=1
+fi
+
+while true; do
+  read -r -p \
+    "Hoeveel tunnels wil je configureren? [$default_count]: " \
+    count </dev/tty || fail 'Invoer afgebroken.'
+
+  count="${count:-$default_count}"
+
+  [[ "$count" =~ ^[1-9][0-9]?$ ]] && break
+
+  printf 'Kies een geheel getal van 1 tot en met 99.\n'
+done
+
+printf 'Zorg dat deze tunnels al in Cloudflare bestaan en houd hun tokens bij de hand.\n'
+
+names=()
+tokens=()
+
+for ((i=1; i<=count; i++)); do
+  printf '\nTunnel %s\n' "$i"
+  default_name="${old_names[i]:-cloudflared-$i}"
+
+  while true; do
+    read -r -p "Containernaam [$default_name]: " value \
+      </dev/tty || fail 'Invoer afgebroken.'
+
+    value="${value:-$default_name}"
+
+    if [[ ! "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+      printf 'Gebruik letters, cijfers, punten, streepjes of underscores; begin met een letter of cijfer.\n'
+      continue
+    fi
+
+    duplicate=false
+
+    for ((j=1; j<i; j++)); do
+      if [[ "${names[j]}" == "$value" ]]; then
+        duplicate=true
+      fi
+    done
+
+    if [[ "$duplicate" == true ]]; then
+      printf 'Gebruik voor elke tunnel een andere naam.\n'
+      continue
+    fi
+
+    names[i]="$value"
+    break
+  done
+
+  while true; do
+    token_prompt='Tunneltoken (invoer verborgen): '
+
+    if [[ -n "${old_tokens[i]:-}" ]]; then
+      token_prompt='Tunneltoken (Enter = bestaand token behouden): '
+    fi
+
+    read -r -s -p "$token_prompt" value \
+      </dev/tty || fail 'Invoer afgebroken.'
+
+    printf '\n' >/dev/tty
+    value="${value:-${old_tokens[i]:-}}"
+
+    if [[ "$value" =~ ^[a-zA-Z0-9_+/=-]+$ ]]; then
+      tokens[i]="$value"
+      break
+    fi
+
+    printf 'Plak alleen het token, zonder spaties of de Docker-opdracht.\n'
+  done
+done
+
+# Controleer de nieuwe configuratie voordat bestaande bestanden wijzigen.
+umask 077
+temporary_env=''
+temporary_compose=''
+
+cleanup() {
+  [[ -z "$temporary_env" ]] || rm -f -- "$temporary_env"
+  [[ -z "$temporary_compose" ]] || rm -f -- "$temporary_compose"
+  return 0
+}
+
+trap cleanup EXIT
+
+temporary_env="$(mktemp .env.install.XXXXXX)"
+temporary_compose="$(mktemp .compose.install.XXXXXX)"
+
+printf '# Lokaal bestand met tokens. Niet delen of committen.\n' \
+  > "$temporary_env"
+
+cat > "$temporary_compose" <<'YAML'
+# ============================================================
+# Cloudflared - Docker Compose Configuration
+# Gegenereerd door install.sh
+# ============================================================
+
+name: cloudflared
+
+x-metadata:
+  project: "Cloudflared"
+  description: "Docker Compose-configuratie voor één of meerdere Cloudflare-tunnels, met voorbeeldconfiguratie en installatie-instructies."
+  repository: "https://github.com/MazterNiels/Cloudflared"
+  author: "MazterNiels"
+  license: "MIT"
+  version: "0.1.0"
+
+services:
+YAML
+
+for ((i=1; i<=count; i++)); do
+  printf '\nCONTAINER_NAME_%s=%s\nTUNNEL_TOKEN_%s=%s\n' \
+    "$i" "${names[i]}" "$i" "${tokens[i]}" >> "$temporary_env"
+
+  cat >> "$temporary_compose" <<YAML
+  cloudflared-$i:
+    container_name: \${CONTAINER_NAME_$i:?Vul CONTAINER_NAME_$i in .env in.}
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: \${TUNNEL_TOKEN_$i:?Vul TUNNEL_TOKEN_$i in .env in.}
+      TUNNEL_LOGLEVEL: info
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+YAML
+done
+
+# Toon de ingevulde configuratie met tokens niet in de terminal.
+docker compose \
+  --env-file "$temporary_env" \
+  -f "$temporary_compose" \
+  config --quiet
+
+# Maak back-ups voordat bestaande bestanden worden vervangen.
+for target in .env compose.yaml; do
+  if [[ -e "$target" || -L "$target" ]]; then
+    [[ -f "$target" && ! -L "$target" ]] \
+      || fail "$target moet een normaal bestand zijn."
+
+    backup="$(mktemp ".env.backup.${target//./_}.XXXXXX")"
+    cp -- "$target" "$backup"
+    chmod 600 "$backup"
+
+    printf 'Back-up gemaakt: %s (kan tokens bevatten; niet delen).\n' \
+      "$backup"
+  fi
+done
+
+mv -- "$temporary_env" .env
+temporary_env=''
+
+mv -- "$temporary_compose" compose.yaml
+temporary_compose=''
+
+unset tokens old_tokens value
+
+printf '\n.env en compose.yaml aangemaakt voor %s tunnel(s).\n' "$count"
+printf 'Op Windows worden de toegangsrechten ook door de Windows-maprechten bepaald.\n'
+
+if (( count < previous_count )); then
+  printf 'Let op: eerder gestarte extra tunnelcontainers worden niet automatisch verwijderd.\n'
+fi
+
+compose=(docker compose --env-file .env -f compose.yaml)
+
+read -r -p 'Containers ophalen en starten? [j/N]: ' answer \
+  </dev/tty || fail 'Invoer afgebroken.'
+
 case "$answer" in
-  j|J|ja|Ja|y|Y|yes|Yes) ;;
-  *) printf 'Voorbereiding afgerond; containers niet gestart.\n'; exit 0 ;;
+  j|J|ja|Ja|y|Y|yes|Yes)
+    "${compose[@]}" pull
+    "${compose[@]}" up -d
+    "${compose[@]}" ps
+    printf '\nControleer in Cloudflare of alle tunnels verbonden zijn.\n'
+    ;;
+  *)
+    printf 'Configuratie opgeslagen. Containers niet gestart.\n'
+    ;;
 esac
 
-"${compose[@]}" pull
-"${compose[@]}" up -d
-"${compose[@]}" ps
-printf '\nContainers gestart. Controleer in Cloudflare of beide tunnels verbonden zijn.\n'
-printf 'Logs bekijken: docker compose --env-file .env -f compose.yaml logs --tail=100\n'
+printf '\nStarten: docker compose --env-file .env -f compose.yaml up -d\n'
+printf 'Logs: docker compose --env-file .env -f compose.yaml logs --tail=100\n'
