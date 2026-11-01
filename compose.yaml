@@ -1,0 +1,51 @@
+# ============================================================
+# Cloudflared - Docker Compose Configuration
+# ============================================================
+
+name: cloudflared
+
+x-metadata:
+  project: "Cloudflared"
+  description: "Docker Compose-configuratie voor één of meerdere Cloudflare-tunnels, met voorbeeldconfiguratie en installatie-instructies."
+  repository: "https://github.com/MazterNiels/Cloudflared"
+  author: "MazterNiels"
+  license: "MIT"
+  version: "0.1.0"
+ 
+services:
+
+# Tunnel 1
+  cloudflared-1:
+    container_name: ${CONTAINER_NAME_1:?Geef CONTAINER_NAME_1 op in het .env-bestand.}
+    image: cloudflare/cloudflared:latest
+    
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN_1:?Geef TUNNEL_TOKEN_1 op in het .env-bestand.}
+      TUNNEL_LOGLEVEL: info
+
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Tunnel 2
+  cloudflared-1:
+    container_name: ${CONTAINER_NAME_2:?Geef CONTAINER_NAME_1 op in het .env-bestand.}
+    image: cloudflare/cloudflared:latest
+    
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN_2:?Geef TUNNEL_TOKEN_1 op in het .env-bestand.}
+      TUNNEL_LOGLEVEL: info
+
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
