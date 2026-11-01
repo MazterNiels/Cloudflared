@@ -190,12 +190,3 @@ docker compose down
 ```
 
 Dit verwijdert de tunnels en routes in Cloudflare niet.
-
-## Problemen oplossen
-
-| Probleem | Controleer |
-| --- | --- |
-| Tunnel niet verbonden | Token, containerlogs en uitgaand netwerkverkeer naar Cloudflare |
-| Tunnel verbonden, applicatie onbereikbaar | Service-URL, poort, protocol en bereikbaarheid vanuit het Docker-netwerk |
-| Omgevingsbestand ontbreekt | Bestandsnaam en pad ten opzichte van `compose.yaml` |
-| Verkeerd account of domein | Of de tunnel en het domein binnen hetzelfde Cloudflare-account staan |
