@@ -199,6 +199,3 @@ Dit verwijdert de tunnels en routes in Cloudflare niet.
 | Tunnel verbonden, applicatie onbereikbaar | Service-URL, poort, protocol en bereikbaarheid vanuit het Docker-netwerk |
 | Omgevingsbestand ontbreekt | Bestandsnaam en pad ten opzichte van `compose.yaml` |
 | Verkeerd account of domein | Of de tunnel en het domein binnen hetzelfde Cloudflare-account staan |
-Deze configuratie en documentatie zijn beschikbaar onder de MIT License. Zie [LICENSE](LICENSE).
-
-Cloudflared zelf valt onder de licentie van het [Cloudflare-project](https://github.com/cloudflare/cloudflared).
