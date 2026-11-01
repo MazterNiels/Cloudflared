@@ -33,7 +33,7 @@ services:
         max-file: "3"
 
 # Tunnel 2
-  cloudflared-1:
+  cloudflared-2:
     container_name: ${CONTAINER_NAME_2:?Geef CONTAINER_NAME_1 op in het .env-bestand.}
     image: cloudflare/cloudflared:latest
     
