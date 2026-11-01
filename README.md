@@ -1,70 +1,74 @@
 # Cloudflared
 
-Docker Compose-configuratie voor één of meerdere Cloudflare-tunnels, met afzonderlijke omgevingsbestanden per tunnel.
+Docker Compose-configuratie voor één of meerdere Cloudflare-tunnels, met voorbeeldconfiguratie en installatie-instructies.
 
-Gebruik deze opzet op een NAS, server of andere Docker-host om applicaties via Cloudflare Tunnel bereikbaar te maken. Iedere tunnel draait in een eigen container en kan aan een ander Cloudflare-account gekoppeld zijn.
+De meegeleverde configuratie draait twee tunnelcontainers in één Compose-project. Iedere container gebruikt een eigen token en kan verbinding maken met een tunnel in een ander Cloudflare-account. Zo kun je bijvoorbeeld privé en zakelijk gescheiden beheren op dezelfde NAS of server.
 
 ## Benodigdheden
 
 - Docker met Docker Compose.
-- Een Cloudflare-account.
-- Voor openbare hostnames: een domein binnen hetzelfde Cloudflare-account als de tunnel.
-- Een tunnel met een eigen token voor iedere container.
-- Een applicatie die vanuit de tunnelcontainer bereikbaar is.
+- Een Cloudflare-account. Beide tunnels mogen in hetzelfde account of in verschillende accounts staan.
+- Voor openbare hostnames: een domein binnen hetzelfde Cloudflare-account als de bijbehorende tunnel.
+- Applicaties die vanuit de tunnelcontainers bereikbaar zijn.
 
-## Bestandsstructuur
+## Bestanden
 
-```text
-compose.yaml
-.env.example
-.gitignore
-LICENSE
-README.md
-```
+| Bestand | Doel | In Git |
+| --- | --- | --- |
+| `compose.yaml` | Containers, verplichte variabelen en loginstellingen | Ja |
+| `.env.example` | Voorbeeld met uitleg en lege tokenvelden | Ja |
+| `.env` | Je eigen containernamen en echte tokens | Nee |
+| `.gitignore` | Sluit lokale omgevingsbestanden uit | Ja |
+| `LICENSE` | MIT-licentie van deze configuratie | Ja |
+| `README.md` | Installatie en beheer | Ja |
 
-Maak daarnaast op je Docker-host een omgevingsbestand per tunnel:
-
-```text
-.env.prive
-.env.zakelijk
-```
-
-De namen `prive` en `zakelijk` zijn voorbeelden. Pas ze aan je eigen situatie aan.
-
-**De echte omgevingsbestanden blijven buiten Git.**
-
-## 1. Tunnels aanmaken
-
-1. Open het [Cloudflare-dashboard](https://dash.cloudflare.com/) en selecteer het juiste account.
-2. Open het overzicht van Cloudflare Tunnels. Zoek onder **Networking → Tunnels** of binnen **Zero Trust → Networks**.
-3. Maak een tunnel van het type **Cloudflared**.
-4. Geef de tunnel een herkenbare naam.
-5. Kies **Docker** als installatieomgeving.
-6. Kopieer uitsluitend het token achter `--token` uit de getoonde opdracht.
-7. Herhaal dit voor iedere extra tunnel, eventueel binnen een ander account.
-
-## 2. Omgevingsbestanden maken
-
-Zet dit in `.env.example`:
-
-```dotenv
-TUNNEL_TOKEN=
-```
-
-Maak in dezelfde map als `compose.yaml` een kopie voor iedere tunnel:
+## 1. Repository downloaden
 
 ```bash
-cp .env.example .env.prive
-cp .env.example .env.zakelijk
+git clone https://github.com/MazterNiels/Cloudflared.git
+cd Cloudflared
 ```
 
-Vul in ieder bestand het bijbehorende token in:
+Je kunt de bestanden ook downloaden en in een projectmap op je NAS plaatsen.
+
+## 2. Cloudflare-tunnels aanmaken
+
+1. Open het [Cloudflare-dashboard](https://dash.cloudflare.com/) en selecteer het juiste account.
+2. Open het overzicht van Cloudflare Tunnels. De menunamen kunnen verschillen; zoek onder **Networking → Tunnels** of binnen **Zero Trust → Networks**.
+3. Maak een tunnel van het type **Cloudflared** en geef deze een herkenbare naam.
+4. Kies **Docker** als installatieomgeving.
+5. Kopieer alleen de waarde achter `--token` uit de installatieopdracht.
+6. Herhaal dit voor de tweede tunnel, eventueel in een ander account.
+
+Je hoeft de getoonde Docker-opdracht niet uit te voeren: Compose start de containers.
+
+## 3. Omgevingsvariabelen invullen
+
+Maak naast `compose.yaml` een kopie van het voorbeeldbestand:
+
+```bash
+cp .env.example .env
+```
+
+Vul in `.env` voor beide tunnels een unieke containernaam en het bijbehorende token in:
 
 ```dotenv
-TUNNEL_TOKEN=vervang_dit_door_het_tunnel_token
+# Tunnel 1
+CONTAINER_NAME_1=VUL_HIER_EEN_NAAM_IN
+TUNNEL_TOKEN_1=VUL_HIER_HET_TOKEN_VAN_TUNNEL_1_IN
+
+# Tunnel 2
+CONTAINER_NAME_2=VUL_HIER_EEN_NAAM_IN
+TUNNEL_TOKEN_2=VUL_HIER_HET_TOKEN_VAN_TUNNEL_2_IN
 ```
 
-Gebruik deze inhoud voor `.gitignore`:
+De containernamen moeten uniek zijn op de Docker-host. De woorden `prive` en `zakelijk` zijn voorbeelden en kun je aanpassen.
+
+Compose leest `.env` bij het starten en vult de variabelen in de YAML in. Iedere container krijgt uitsluitend zijn eigen token doorgegeven als `TUNNEL_TOKEN`.
+
+Alle vier de variabelen zijn verplicht. Ontbreekt een waarde of is deze leeg, dan stopt Compose met een foutmelding. Een ingevuld maar ongeldig token wordt pas bij het verbinden door Cloudflare geweigerd.
+
+Bewaar `.env` buiten Git. De `.gitignore` hoort dit te bevatten:
 
 ```gitignore
 .env
@@ -72,40 +76,9 @@ Gebruik deze inhoud voor `.gitignore`:
 !.env.example
 ```
 
-Commit geen echte tokens. `.gitignore` verwijdert geen bestanden die al door Git worden gevolgd. Is een token gepubliceerd, roteer het dan in Cloudflare en werk het lokale omgevingsbestand bij.
+Publiceer alleen `.env.example` zonder echte tokens. Als een token is uitgelekt, roteer het in Cloudflare en werk `.env` bij. Beperk de toegang tot `.env` en Docker-beheer tot bevoegde gebruikers.
 
-## 3. Docker Compose configureren
-
-Plaats dit in `compose.yaml`:
-
-```yaml
-services:
-  cloudflared-prive:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    env_file:
-      - .env.prive
-
-  cloudflared-zakelijk:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    env_file:
-      - .env.zakelijk
-```
-
-`env_file` geeft iedere container zijn eigen `TUNNEL_TOKEN`. Je hoeft het token niet ook in `command` of `environment` op te nemen.
-
-### Eén tunnel gebruiken
-
-Verwijder de tweede service en maak alleen het omgevingsbestand voor de eerste service aan.
-
-### Extra tunnels toevoegen
-
-Kopieer een service, geef deze een unieke naam en verwijs naar een eigen omgevingsbestand.
-
-## 4. Starten
+## 4. Project starten
 
 Voer vanuit de projectmap uit:
 
@@ -113,7 +86,7 @@ Voer vanuit de projectmap uit:
 docker compose up -d
 ```
 
-Op een NAS kun je dezelfde configuratie via het Docker-beheer als Compose-project starten. Zorg dat de omgevingsbestanden in de projectmap beschikbaar zijn.
+Gebruik je het Docker-beheer van een NAS, maak dan een Compose-project met deze bestanden. Zorg dat `.env` naast `compose.yaml` staat en dat het beheerprogramma de variabelen daaruit inleest. Ondersteunt het dat niet, voer de vier variabelen dan in via de projectinstellingen.
 
 Controleer de containers:
 
@@ -127,9 +100,9 @@ Bekijk de logs:
 docker compose logs --tail=100
 ```
 
-Controleer ook in Cloudflare of de tunnels verbonden zijn.
+Controleer ook in Cloudflare of beide tunnels verbonden zijn.
 
-## 5. Applicaties toevoegen
+## 5. Applicaties bereikbaar maken
 
 Open de gewenste tunnel in Cloudflare en voeg een **Published application route** of **Public hostname** toe.
 
@@ -140,47 +113,47 @@ Open de gewenste tunnel in Cloudflare en voeg een **Published application route*
 | Servicetype | `HTTP` |
 | Service-URL | `192.168.1.100:8080` |
 
-Vervang het voorbeeldadres door het lokale IP-adres van je server en de gepubliceerde poort van je applicatie. Gebruik HTTPS wanneer de achterliggende applicatie dat vereist.
+Vervang het voorbeeldadres door het lokale IP-adres van je server en de gepubliceerde applicatiepoort. Gebruik HTTPS als de achterliggende applicatie dat vereist.
 
-### Docker-netwerk
+`localhost` verwijst vanuit de tunnelcontainer naar die container zelf. Voor verbinding via een Docker-servicenaam moeten de tunnel en applicatie een Docker-netwerk delen.
 
-`localhost` verwijst vanuit een tunnelcontainer naar die container zelf.
+Je beheert hostnames en routes in Cloudflare; `compose.yaml` beheert de containers. Stel voor toepassingen die niet openbaar bedoeld zijn ook toegangsbeveiliging in, bijvoorbeeld Cloudflare Access.
 
-Gebruik voor een applicatie op je Docker-host het lokale IP-adres en de gepubliceerde applicatiepoort. Voor verbinding via een Docker-servicenaam moeten de tunnel en applicatie een Docker-netwerk delen.
+## Configuratie
 
-### Routes en toegang
-
-Domeinen en routes beheer je bij deze opzet in Cloudflare. De YAML beheert de containers.
-
-Een tunnel maakt een applicatie bereikbaar. Stel voor toepassingen die niet openbaar bedoeld zijn ook toegangsbeveiliging in, bijvoorbeeld Cloudflare Access.
+- **Projectnaam:** `cloudflared`.
+- **Servicenamen:** `cloudflared-1` en `cloudflared-2`. Deze gebruik je in Compose-opdrachten, ook als je de containernamen wijzigt.
+- **Herstartbeleid:** `unless-stopped` herstart containers na uitval, tenzij je ze zelf hebt gestopt.
+- **Image:** `cloudflare/cloudflared:latest`. Nieuwe images worden toegepast wanneer je ze ophaalt en de containers bijwerkt.
+- **Logs:** de driver `local` roteert per container maximaal drie bestanden van 10 MB, vóór eventuele compressie.
+- **Metadata:** `x-metadata` documenteert het project en wordt niet automatisch als containerlabels opgeslagen. De versie daarin betreft deze configuratie, niet de Cloudflared-image.
 
 ## Beheer
 
 ### Bijwerken
 
 ```bash
+git pull
 docker compose pull
 docker compose up -d
 ```
 
-`latest` volgt de beschikbare imageversie wanneer je deze ophaalt. Updates worden met bovenstaande opdrachten toegepast.
+Gebruik `git pull` alleen als je de repository met Git hebt gedownload. Controleer bij configuratiewijzigingen of je `.env` nieuwe variabelen nodig heeft.
 
-Voor een vaste versie vervang je `latest` door een bestaande versietag.
+### Gewijzigde naam of token toepassen
 
-### Een gewijzigd token toepassen
-
-Werk het betreffende omgevingsbestand bij en maak de container opnieuw aan:
+Werk `.env` bij en maak de betreffende container opnieuw aan:
 
 ```bash
-docker compose up -d --force-recreate cloudflared-prive
+docker compose up -d --force-recreate cloudflared-1
 ```
 
-Vervang de servicenaam wanneer je een andere tunnel bijwerkt.
+Gebruik `cloudflared-2` voor de tweede tunnel.
 
-### Logs van één tunnel bekijken
+### Logs van één tunnel volgen
 
 ```bash
-docker compose logs --tail=100 -f cloudflared-prive
+docker compose logs --tail=100 -f cloudflared-1
 ```
 
 ### Stoppen
@@ -190,3 +163,32 @@ docker compose down
 ```
 
 Dit verwijdert de tunnels en routes in Cloudflare niet.
+
+## Aantal tunnels aanpassen
+
+De standaardconfiguratie vereist beide tunnels.
+
+- **Eén tunnel:** verwijder de service `cloudflared-2` uit `compose.yaml`. De variabelen voor tunnel 2 zijn dan niet meer nodig.
+- **Extra tunnel:** kopieer een service, geef deze een unieke servicenaam en gebruik nieuwe variabelen, bijvoorbeeld `CONTAINER_NAME_3` en `TUNNEL_TOKEN_3`. Voeg deze ook toe aan `.env` en, zonder echt token, aan `.env.example`.
+
+## Problemen oplossen
+
+| Probleem | Controleer |
+| --- | --- |
+| Compose meldt een ontbrekende variabele | Of `.env` wordt ingelezen en alle vier de waarden zijn ingevuld |
+| Containernaam is al in gebruik | Of de gekozen naam uniek is op de Docker-host |
+| Tunnel verbindt niet | Token, containerlogs en uitgaand netwerkverkeer naar Cloudflare |
+| Tunnel is verbonden, maar de applicatie niet bereikbaar | Service-URL, poort, protocol en netwerkbereikbaarheid |
+
+## Documentatie
+
+- [Cloudflare Tunnel instellen](https://developers.cloudflare.com/tunnel/get-started/)
+- [Cloudflared bijwerken](https://developers.cloudflare.com/tunnel/guides/update-cloudflared/)
+- [Docker Compose-variabelen](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
+- [Docker-logdriver local](https://docs.docker.com/engine/logging/drivers/local/)
+
+## Auteur
+
+Deze configuratie is gemaakt en wordt onderhouden door [MazterNiels](https://github.com/MazterNiels).
+
+Suggesties of verbeteringen? Open gerust een issue of pull request in deze repository.
